@@ -1,0 +1,93 @@
+import Combine
+import SwiftUI
+struct ContentView: View {
+    @State var inputText = ""
+    @State var showResultView = false
+    
+    var body: some View {
+        NavigationView {
+            VStack {
+                VStack {
+                    TextField("Enter", text: $inputText)
+                }
+                Button("Show Result") {
+                    showResultView = true
+                }
+                .padding()
+                .background(Color.blue)
+                .foregroundColor(.white)
+                .cornerRadius(8)
+            }
+            .navigationTitle("Input Text")
+            .sheet(isPresented: $showResultView) {
+                ResultView(displayText: inputText)
+
+            }
+        }
+    }
+}
+
+struct PostModel: Identifiable, Codable {
+      let id: String
+      let url: String
+}
+
+class DownloadWithCombineViewModel: ObservableObject {
+
+    @Published var posts: [PostModel] = []
+    var cancellables = Set<AnyCancellable>()
+    
+    init() {
+        getPosts()
+      }
+    
+    func getPosts() {
+        guard let url = URL(string: "https://asm-parser-production.up.railway.app/vin?sid=")
+        else { return }
+        URLSession.shared.dataTaskPublisher(for: url)
+        //.subscribe(on: DispatchQueue.global(qos: .background))
+            .receive(on: DispatchQueue.main)
+            .tryMap(handleOutput)
+            .decode(type: PostModel.self, decoder: JSONDecoder())
+            .replaceError(with: PostModel(id: "", url: ""))
+            .sink(receiveValue: { [weak self] returnedPosts in
+                self?.posts = [returnedPosts]
+            })
+            .store(in: &cancellables)
+    }
+
+    func handleOutput(output: URLSession.DataTaskPublisher.Output) throws -> Data {
+        guard
+            let response = output.response as? HTTPURLResponse,
+            response.statusCode >= 200 && response.statusCode < 300 else {
+            throw URLError(.badServerResponse)
+        }
+        return output.data
+    }
+}
+struct ResultView: View {
+    
+    var displayText: String
+    @StateObject var vm = DownloadWithCombineViewModel()
+
+    var body: some View {
+        Text("https://asm-parser-production.up.railway.app/vin?sid=\(displayText)")
+        .padding()
+        List {
+            
+            ForEach(vm.posts) { post in
+                VStack(alignment: .leading) {
+                    Text(post.url)
+                        .font(.headline)
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
+            }
+        }
+    }
+}
+
+struct ContentView_Previews: PreviewProvider {
+    static var previews: some View {
+        ContentView()
+    }
+}
